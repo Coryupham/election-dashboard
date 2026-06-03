@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/results.py": {
+      "runtime": "python3.9",
+      "maxDuration": 20
+    }
+  },
+  "rewrites": [
+    { "source": "/api/results", "destination": "/api/results.py" }
+  ]
+}
