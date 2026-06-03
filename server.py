@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Simple election results dashboard server."""
+
+import json
+import urllib.request
+import xml.etree.ElementTree as ET
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+NS = "ElectionSummaryReportRPT"
+XML_PATH = Path(__file__).parent / "2026-primary-results-xml.xml"
+HTML_PATH = Path(__file__).parent / "dashboard.html"
+RESULTS_URL = "https://www.slocounty.ca.gov/departments/clerk-recorder/forms-documents/elections-and-voting/current-elections/2026-06-02-california-primary-election/reports-and-results/2026-primary-results-xml"
+
+
+def fetch_xml():
+    req = urllib.request.Request(RESULTS_URL, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = resp.read()
+    XML_PATH.write_bytes(data)
+    return len(data)
+
+
+def find(el, tag):
+    return el.find(f"{{{NS}}}{tag}")
+
+
+def findall(el, tag):
+    return el.findall(f"{{{NS}}}{tag}")
+
+
+def parse_results():
+    tree = ET.parse(XML_PATH)
+    root = tree.getroot()
+
+    # Title / header
+    title_el = find(find(root, "Title"), "Report")
+    header = {
+        "title": title_el.attrib.get("Textbox11", ""),
+        "county": title_el.attrib.get("Textbox2", ""),
+        "date": title_el.attrib.get("Textbox9", ""),
+        "subtitle": title_el.attrib.get("Textbox8", "").replace("\n", " | "),
+    }
+
+    # Registration & turnout
+    reg_el = find(find(find(root, "RegistrationAndTurnout"), "Report"), "Tablix10")
+    reg_groups = find(reg_el, "electorGroupId2_Collection")
+    turnout = {}
+    for g in findall(reg_groups, "electorGroupId2"):
+        a = g.attrib
+        group = a.get("electorGroupId2", "")
+        turnout[group] = {
+            "registered": int(a.get("Textbox32", 0)),
+            "ballots_cast": int(a.get("ballots2", 0)),
+            "turnout_pct": float(a.get("Textbox6", 0)),
+        }
+
+    # Contests
+    contests = []
+    batch_list = find(root, "tabBatchIdList")
+    batch_groups = find(batch_list, "TabBatchGroup_Collection")
+    for bg in findall(batch_groups, "TabBatchGroup"):
+        sub = find(bg, "ElectionSummarySubReport")
+        subrpt = find(sub, "Report")
+
+        # Summary stats (from the first batch group)
+        summary = {}
+        for tag, key in [
+            ("Tablix2", "precincts"),
+            ("Tablix22", "tabulators"),
+            ("Tablix3", "voters_cast"),
+            ("Tablix4", "cards_cast"),
+        ]:
+            el = find(subrpt, tag)
+            if el is not None:
+                for child in el.iter():
+                    if child.attrib:
+                        summary[key] = list(child.attrib.values())[0]
+
+        contest_list = find(subrpt, "contestList")
+        if contest_list is None:
+            continue
+        contest_groups = find(contest_list, "ContestIdGroup_Collection")
+        for cg in findall(contest_groups, "ContestIdGroup"):
+            contest_id = cg.attrib.get("contestId", "").strip()
+
+            # Contest stats — precincts, tabulators, ballots, undervotes, overvotes
+            stats_report = find(find(cg, "ContestStatistics"), "Report")
+            contest_stats = {"precincts": "", "tabulators": "", "ballots": {}, "undervotes": {}, "overvotes": {}, "blanks": {}}
+            if stats_report is not None:
+                tab22 = find(stats_report, "Tablix22")
+                if tab22 is not None:
+                    for el in tab22.iter():
+                        if "reportedTab" in el.attrib:
+                            contest_stats["tabulators"] = el.attrib["reportedTab"]
+                tab2 = find(stats_report, "Tablix2")
+                if tab2 is not None:
+                    for el in tab2.iter():
+                        if "Textbox2" in el.attrib:
+                            contest_stats["precincts"] = el.attrib["Textbox2"]
+                tablix1 = find(stats_report, "Tablix1")
+                if tablix1 is not None:
+                    # Each Textbox* child holds a stat row with cgGroup_Collection breakdown + Textbox9 total
+                    stat_map = [
+                        ("Textbox7",  "ballots",    "ballotsTextBox", "ballots2"),
+                        ("Textbox33", "undervotes", "undervotes",     "undervotes3"),
+                        ("Textbox37", "overvotes",  "Textbox36",      "overvotes2"),
+                        ("Textbox3",  "blanks",     "undervotes1",    "totalBlanks"),
+                    ]
+                    for box_tag, key, cg_attr, total_attr in stat_map:
+                        box = find(tablix1, box_tag)
+                        if box is None:
+                            continue
+                        breakdown = {}
+                        cg_coll2 = find(box, "cgGroup_Collection")
+                        if cg_coll2 is not None:
+                            for cg2 in cg_coll2:
+                                for cgid in cg2:
+                                    grp = cgid.attrib.get("cgId2", "")
+                                    v = int(cgid.attrib.get(cg_attr, 0))
+                                    if grp:
+                                        breakdown[grp] = v
+                        total_el = find(box, "Textbox9")
+                        raw = total_el.attrib.get(total_attr, "0") if total_el is not None else "0"
+                        # ballots2 can look like "32400 / 182126 " — take just the first number
+                        total = int(str(raw).split("/")[0].strip() or 0)
+                        contest_stats[key] = {"breakdown": breakdown, "total": total}
+
+            # Candidates
+            candidates = []
+            cand_res = find(cg, "CandidateResults")
+            if cand_res is not None:
+                cand_rpt = find(cand_res, "Report")
+                if cand_rpt is not None:
+                    tablix1 = find(cand_rpt, "Tablix1")
+                    if tablix1 is not None:
+                        ch_coll = find(tablix1, "chGroup_Collection")
+                        if ch_coll is not None:
+                            for ch in findall(ch_coll, "chGroup"):
+                                name_el = find(ch, "candidateNameTextBox4")
+                                if name_el is None:
+                                    continue
+                                name = name_el.attrib.get("candidateNameTextBox4", "").strip()
+                                # Party is in Textbox2 child
+                                party_el = find(name_el, "Textbox2")
+                                party = party_el.attrib.get("Textbox14", "") if party_el is not None else ""
+                                votes_el = find(name_el, "Textbox13")
+                                votes = int(votes_el.attrib.get("vot8", 0)) if votes_el is not None else 0
+                                # Counting group breakdown (Polling / Vote by Mail)
+                                breakdown = {}
+                                cg_coll = find(name_el, "cgGroup_Collection")
+                                if cg_coll is not None:
+                                    for cg_el in findall(cg_coll, "cgGroup"):
+                                        grp = cg_el.attrib.get("countingGroupName", "")
+                                        v = int(cg_el.attrib.get("vot7", 0))
+                                        breakdown[grp] = v
+                                candidates.append({
+                                    "name": name,
+                                    "party": party,
+                                    "votes": votes,
+                                    "pct": 0.0,
+                                    "breakdown": breakdown,
+                                })
+
+            # Sort by votes desc
+            candidates.sort(key=lambda c: c["votes"], reverse=True)
+
+            # Compute pct from totals if all zero
+            total_votes = sum(c["votes"] for c in candidates)
+            if total_votes > 0:
+                for c in candidates:
+                    c["pct"] = round(c["votes"] / total_votes * 100, 2)
+
+            contests.append({
+                "id": contest_id,
+                "stats": contest_stats,
+                "candidates": candidates,
+                "total_votes": total_votes,
+            })
+
+    return {"header": header, "turnout": turnout, "summary": summary, "contests": contests}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass  # suppress default logging
+
+    def do_POST(self):
+        if self.path == "/api/refresh":
+            try:
+                size = fetch_xml()
+                data = parse_results()
+                body = json.dumps({"ok": True, "bytes": size, "results": data}).encode()
+                self.send_response(200)
+            except Exception as e:
+                body = json.dumps({"ok": False, "error": str(e)}).encode()
+                self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_GET(self):
+        if self.path == "/api/results":
+            data = parse_results()
+            body = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path in ("/", "/dashboard"):
+            body = HTML_PATH.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+if __name__ == "__main__":
+    port = 8765
+    print(f"Election dashboard running at http://localhost:{port}")
+    print("Press Ctrl+C to stop.")
+    HTTPServer(("", port), Handler).serve_forever()

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLO County Election Results</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #252836;
+    --surface3: #1e2130;
+    --border: #2e3248;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #6366f1;
+    --polling: #22c55e;
+    --vbm: #3b82f6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-left h1 { font-size: 1.25rem; font-weight: 700; }
+  .header-left p { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+  .refresh-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.45rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: opacity 0.15s;
+  }
+  .refresh-btn:hover { opacity: 0.85; }
+  .refresh-btn svg { width: 14px; height: 14px; }
+
+  .last-updated { font-size: 0.75rem; color: var(--muted); }
+
+  main { padding: 1.5rem 2rem; max-width: 1400px; margin: 0 auto; }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+  }
+  .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card .value { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
+  .stat-card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+  .turnout-bar-wrap { background: var(--surface2); border-radius: 4px; height: 8px; overflow: hidden; margin-top: 6px; }
+  .turnout-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.6s ease; }
+
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .filter-bar input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 0.45rem 0.75rem;
+    font-size: 0.875rem;
+    width: 260px;
+    outline: none;
+  }
+  .filter-bar input:focus { border-color: var(--accent); }
+  .filter-bar input::placeholder { color: var(--muted); }
+
+  .contests-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 1.25rem;
+  }
+
+  /* Contest card */
+  .contest-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .contest-card:hover { border-color: var(--accent); }
+  .contest-card.expanded { border-color: var(--accent); }
+
+  .contest-header {
+    padding: 0.9rem 1.1rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .contest-header-left { flex: 1; min-width: 0; }
+  .contest-title { font-size: 0.9rem; font-weight: 600; line-height: 1.3; }
+  .contest-meta { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+
+  .expand-icon {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 2px;
+    transition: transform 0.2s;
+  }
+  .contest-card.expanded .expand-icon { transform: rotate(180deg); }
+
+  .contest-body { padding: 0.75rem 1.1rem 1rem; }
+
+  /* Candidate rows */
+  .candidate-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.55rem;
+  }
+  .candidate-row:last-child { margin-bottom: 0; }
+
+  .party-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .cand-name { font-size: 0.82rem; font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cand-party { font-size: 0.7rem; flex-shrink: 0; min-width: 30px; }
+  .bar-wrap { flex: 2; background: var(--surface2); border-radius: 3px; height: 6px; overflow: hidden; min-width: 60px; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .cand-pct { font-size: 0.78rem; font-weight: 600; min-width: 38px; text-align: right; }
+  .cand-votes { font-size: 0.72rem; color: var(--muted); min-width: 50px; text-align: right; }
+
+  .no-votes { font-size: 0.8rem; color: var(--muted); font-style: italic; padding: 0.5rem 0; }
+
+  /* Detail panel */
+  .detail-panel {
+    display: none;
+    border-top: 1px solid var(--border);
+    background: var(--surface3);
+    padding: 1rem 1.1rem;
+  }
+  .contest-card.expanded .detail-panel { display: block; }
+
+  .detail-section { margin-bottom: 1rem; }
+  .detail-section:last-child { margin-bottom: 0; }
+  .detail-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+
+  /* Counting group breakdown */
+  .breakdown-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+    font-size: 0.8rem;
+  }
+  .breakdown-label { min-width: 90px; color: var(--muted); }
+  .breakdown-bar-wrap { flex: 1; background: var(--surface2); border-radius: 3px; height: 5px; overflow: hidden; }
+  .breakdown-bar-fill { height: 100%; border-radius: 3px; }
+  .breakdown-val { min-width: 55px; text-align: right; font-size: 0.75rem; color: var(--muted); }
+
+  /* Stats table */
+  .stats-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  .stats-table td { padding: 0.25rem 0.4rem; }
+  .stats-table td:first-child { color: var(--muted); width: 110px; }
+  .stats-table td:not(:first-child) { text-align: right; min-width: 60px; }
+  .stats-table thead td { color: var(--muted); font-size: 0.7rem; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+
+  /* Candidate detail rows */
+  .cand-detail-row {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .cand-detail-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .cand-detail-name { font-size: 0.82rem; font-weight: 600; margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.4rem; }
+  .cand-detail-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: #fff;
+  }
+
+  .loading, .error { text-align: center; padding: 4rem; color: var(--muted); font-size: 1rem; }
+  .error { color: #f87171; }
+
+  @media (max-width: 600px) {
+    main { padding: 1rem; }
+    header { padding: 1rem; }
+    .contests-grid { grid-template-columns: 1fr; }
+    .filter-bar input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1 id="election-title">SLO County Election Results</h1>
+    <p id="election-subtitle"></p>
+  </div>
+  <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <span class="last-updated" id="last-updated"></span>
+    <button class="refresh-btn" onclick="refreshData()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      Refresh
+    </button>
+  </div>
+</header>
+
+<main>
+  <div id="summary-grid" class="summary-grid"></div>
+  <div class="filter-bar">
+    <input type="text" id="search" placeholder="Search contests or candidates…" oninput="renderContests()">
+  </div>
+  <div id="contests" class="contests-grid"><div class="loading">Loading results…</div></div>
+</main>
+
+<script>
+const PARTY_COLORS = {
+  DEM: '#3b82f6', REP: '#ef4444', LIB: '#f59e0b',
+  GRN: '#22c55e', NPP: '#8b5cf6', AI: '#ec4899', PF: '#f97316',
+};
+const GROUP_COLORS = { 'Polling': '#22c55e', 'Vote by Mail': '#3b82f6' };
+
+function partyColor(p) { return PARTY_COLORS[p?.toUpperCase()] || '#64748b'; }
+function groupColor(g) { return GROUP_COLORS[g] || '#6366f1'; }
+
+let allData = null;
+const expandedCards = new Set();
+
+async function loadData() {
+  try {
+    const res = await fetch('/api/results');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allData = await res.json();
+    renderAll();
+    document.getElementById('last-updated').textContent = 'Loaded ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('contests').innerHTML = `<div class="error">Failed to load: ${e.message}</div>`;
+  }
+}
+
+async function refreshData() {
+  const btn = document.querySelector('.refresh-btn');
+  const statusEl = document.getElementById('last-updated');
+  btn.disabled = true;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Fetching…`;
+  statusEl.textContent = 'Downloading from SLO County…';
+  try {
+    const res = await fetch('/api/refresh', { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    allData = json.results;
+    renderAll();
+    statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh`;
+  }
+}
+
+function renderAll() {
+  if (!allData) return;
+  const { header, turnout, summary, contests } = allData;
+
+  document.getElementById('election-title').textContent =
+    `${header.county} County — ${header.title}`;
+  document.getElementById('election-subtitle').textContent = header.subtitle;
+
+  const tot = turnout['Total'] || {};
+  const registered = (tot.registered || 0).toLocaleString();
+  const cast = (tot.ballots_cast || 0).toLocaleString();
+  const pct = (tot.turnout_pct || 0).toFixed(1);
+
+  document.getElementById('summary-grid').innerHTML = `
+    <div class="stat-card">
+      <div class="label">Registered Voters</div>
+      <div class="value">${registered}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Ballots Cast</div>
+      <div class="value">${cast}</div>
+      <div class="sub">${pct}% turnout</div>
+      <div class="turnout-bar-wrap"><div class="turnout-bar-fill" style="width:${Math.min(pct,100)}%"></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Precincts</div>
+      <div class="value" style="font-size:1rem;padding-top:6px">${summary.precincts || '—'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Tabulators</div>
+      <div class="value" style="font-size:1rem;padding-top:6px">${summary.tabulators || '—'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Contests</div>
+      <div class="value">${contests.length}</div>
+    </div>
+  `;
+
+  renderContests();
+}
+
+function renderContests() {
+  if (!allData) return;
+  const query = document.getElementById('search').value.toLowerCase();
+  const filtered = allData.contests.filter(c => {
+    if (!query) return true;
+    if (c.id.toLowerCase().includes(query)) return true;
+    return c.candidates.some(ca => ca.name.toLowerCase().includes(query));
+  });
+
+  const container = document.getElementById('contests');
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="loading">No contests match your search.</div>';
+    return;
+  }
+  container.innerHTML = filtered.map(c => contestCard(c)).join('');
+}
+
+function toggleCard(id) {
+  if (expandedCards.has(id)) expandedCards.delete(id);
+  else expandedCards.add(id);
+  renderContests();
+}
+
+function contestCard(contest) {
+  const { id, candidates, total_votes, stats } = contest;
+  const isExpanded = expandedCards.has(id);
+  const maxVotes = candidates.length ? candidates[0].votes : 0;
+
+  // Summary rows (top of card)
+  let rows = '';
+  if (!candidates.length || total_votes === 0) {
+    rows = '<div class="no-votes">No votes recorded yet</div>';
+  } else {
+    rows = candidates.slice(0, 5).map(c => {
+      const color = partyColor(c.party);
+      const barPct = maxVotes > 0 ? (c.votes / maxVotes * 100) : 0;
+      return `
+        <div class="candidate-row">
+          <div class="party-dot" style="background:${color}"></div>
+          <div class="cand-name" title="${c.name}">${c.name}</div>
+          <div class="cand-party" style="color:${color}">${c.party || ''}</div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:${barPct}%;background:${color}"></div></div>
+          <div class="cand-pct">${c.pct.toFixed(1)}%</div>
+          <div class="cand-votes">${c.votes.toLocaleString()}</div>
+        </div>`;
+    }).join('');
+    if (candidates.length > 5 && !isExpanded) {
+      rows += `<div class="no-votes" style="cursor:pointer">+${candidates.length - 5} more — click to expand</div>`;
+    }
+  }
+
+  const totalStr = total_votes > 0 ? `${total_votes.toLocaleString()} votes` : 'No votes yet';
+
+  // Detail panel
+  const detail = isExpanded ? buildDetail(contest) : '';
+
+  return `
+    <div class="contest-card${isExpanded ? ' expanded' : ''}" data-id="${id.replace(/"/g, '&quot;')}" onclick="toggleCard(this.dataset.id)">
+      <div class="contest-header">
+        <div class="contest-header-left">
+          <div class="contest-title">${id}</div>
+          <div class="contest-meta">${totalStr}</div>
+        </div>
+        <div class="expand-icon">▼</div>
+      </div>
+      <div class="contest-body">${rows}</div>
+      <div class="detail-panel">${detail}</div>
+    </div>`;
+}
+
+function buildDetail(contest) {
+  const { candidates, total_votes, stats } = contest;
+  const sections = [];
+
+  // Contest-level stats table
+  if (stats) {
+    const rows = [];
+    const groups = ['Polling', 'Vote by Mail'];
+
+    function statRow(label, stat) {
+      if (!stat || typeof stat !== 'object') return '';
+      const bd = stat.breakdown || {};
+      return `<tr>
+        <td>${label}</td>
+        ${groups.map(g => `<td>${(bd[g] ?? 0).toLocaleString()}</td>`).join('')}
+        <td>${(stat.total ?? 0).toLocaleString()}</td>
+      </tr>`;
+    }
+
+    const ballotsRow = statRow('Ballots Cast', stats.ballots);
+    const undervRow  = statRow('Undervotes', stats.undervotes);
+    const overvRow   = statRow('Overvotes', stats.overvotes);
+    const blanksRow  = statRow('Blanks/Skipped', stats.blanks);
+
+    if (ballotsRow || undervRow || overvRow || blanksRow) {
+      sections.push(`
+        <div class="detail-section">
+          <div class="detail-section-title">Contest Statistics</div>
+          <table class="stats-table">
+            <thead><tr><td></td>${groups.map(g => `<td style="color:${groupColor(g)}">${g}</td>`).join('')}<td>Total</td></tr></thead>
+            <tbody>${ballotsRow}${undervRow}${overvRow}${blanksRow}</tbody>
+          </table>
+        </div>`);
+    }
+
+    if (stats.precincts || stats.tabulators) {
+      sections.push(`
+        <div class="detail-section">
+          <div class="detail-section-title">Reporting Status</div>
+          <div style="font-size:0.78rem;color:var(--muted);line-height:1.8">
+            ${stats.precincts ? `<div>${stats.precincts}</div>` : ''}
+            ${stats.tabulators ? `<div>${stats.tabulators}</div>` : ''}
+          </div>
+        </div>`);
+    }
+  }
+
+  // All candidates with breakdown
+  if (candidates.length > 0) {
+    const maxVotes = candidates[0].votes;
+    const groups = ['Polling', 'Vote by Mail'];
+
+    const candRows = candidates.map(c => {
+      const color = partyColor(c.party);
+      const bd = c.breakdown || {};
+      const bdTotal = Object.values(bd).reduce((a, b) => a + b, 0);
+
+      const breakdownBars = groups.map(g => {
+        const v = bd[g] ?? 0;
+        const barPct = bdTotal > 0 ? (v / bdTotal * 100) : 0;
+        const gc = groupColor(g);
+        return `
+          <div class="breakdown-row">
+            <div class="breakdown-label" style="color:${gc}">${g}</div>
+            <div class="breakdown-bar-wrap"><div class="breakdown-bar-fill" style="width:${barPct}%;background:${gc}"></div></div>
+            <div class="breakdown-val">${v.toLocaleString()}</div>
+          </div>`;
+      }).join('');
+
+      return `
+        <div class="cand-detail-row">
+          <div class="cand-detail-name">
+            <span class="party-dot" style="background:${color}"></span>
+            ${c.name}
+            ${c.party ? `<span class="cand-detail-badge" style="background:${color}">${c.party}</span>` : ''}
+            <span style="margin-left:auto;font-size:0.8rem;color:var(--muted)">${c.pct.toFixed(1)}% &nbsp; ${c.votes.toLocaleString()}</span>
+          </div>
+          ${breakdownBars}
+        </div>`;
+    }).join('');
+
+    sections.push(`
+      <div class="detail-section">
+        <div class="detail-section-title">All Candidates — Vote Breakdown</div>
+        ${candRows}
+      </div>`);
+  }
+
+  return sections.join('') || '<div class="no-votes">No detail available</div>';
+}
+
+loadData(); // initial load from local file only
+</script>
+</body>
+</html>
