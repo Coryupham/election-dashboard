@@ -9,6 +9,7 @@ import json
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
+from http.server import BaseHTTPRequestHandler
 
 RESULTS_URL = (
     "https://www.slocounty.ca.gov/departments/clerk-recorder/forms-documents/"
@@ -207,18 +208,26 @@ def get_data() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Vercel handler
+# Vercel handler — must be a class named `handler` extending BaseHTTPRequestHandler
 # ---------------------------------------------------------------------------
 
-def handler(request, response):
-    try:
-        data = get_data()
-        body = json.dumps(data)
-        response.status_code = 200
-        response.headers["Content-Type"]                = "application/json"
-        response.headers["Cache-Control"]               = "public, max-age=60, stale-while-revalidate=3600"
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        return response.send(body)
-    except Exception as e:
-        response.status_code = 500
-        return response.send(json.dumps({"error": str(e)}))
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            data = get_data()
+            body = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, max-age=60, stale-while-revalidate=3600")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as e:
+            body = json.dumps({"error": str(e)}).encode()
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+    def log_message(self, fmt, *args):
+        pass  # suppress default access logs
