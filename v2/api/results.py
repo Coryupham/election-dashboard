@@ -191,6 +191,7 @@ def get_data() -> dict:
 # Flask route
 # ---------------------------------------------------------------------------
 
+@app.route("/")
 @app.route("/api/results")
 def results():
     try:
