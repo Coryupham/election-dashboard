@@ -6,12 +6,15 @@ more than once per hour.
 """
 
 import json
+import os
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
-from flask import Flask, Response
+from flask import Flask, Response, send_file
 
 app = Flask(__name__)
+
+HTML_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "index.html")
 
 RESULTS_URL = (
     "https://www.slocounty.ca.gov/departments/clerk-recorder/forms-documents/"
@@ -188,10 +191,14 @@ def get_data() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Flask route
+# Flask routes
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+def index():
+    return send_file(HTML_PATH, mimetype="text/html")
+
+
 @app.route("/api/results")
 def results():
     try:
