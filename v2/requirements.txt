@@ -1,1 +1,1 @@
-# No third-party dependencies — stdlib only (urllib, xml.etree, json)
+flask>=3.0.0
