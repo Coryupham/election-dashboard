@@ -1,7 +1,1 @@
-{
-  "functions": {
-    "api/results.py": {
-      "maxDuration": 20
-    }
-  }
-}
+{}
